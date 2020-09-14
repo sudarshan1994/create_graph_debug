@@ -7,6 +7,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from collections import OrderedDict
 import pickle
 import os
+
+torch.backends.cudnn.enabled=False
 class MetaBertEmbeddings(nn.Module):
     def __init__(self):
         super().__init__()
@@ -122,23 +124,23 @@ class Classifier(nn.Module):
 
 
 def get_pre_trained(path):
-    model = BertEmbeddingModel().cuda()
-    decoder_model = Classifier().cuda()
+    model = BertEmbeddingModel()
+    decoder_model = Classifier()
     encoder_save_model_path = os.path.join(path, 'pre_trained_encoder_checkpoint-{}'.format(0))
     decoder_save_model_path = os.path.join(path, 'pre_trained_decoder_checkpoint-{}'.format(0))
-    model_state_dict = torch.load(encoder_save_model_path)
-    decoder_state_dict = torch.load(decoder_save_model_path)
+    model_state_dict = torch.load(encoder_save_model_path, map_location = torch.device('cpu'))
+    decoder_state_dict = torch.load(decoder_save_model_path, map_location = torch.device('cpu'))
 
     model.load_state_dict(model_state_dict)
     decoder_model.load_state_dict(decoder_state_dict)
-    return  model, decoder_model
+    return  model.double().cpu(), decoder_model.double().cpu()
 
 
 def forward(input_ids,labels, model, decoder_model):
-    loss_fct = nn.CrossEntropyLoss().cuda()
+    loss_fct = nn.CrossEntropyLoss()
     #input_ids, masks, labels = load_container(args)
     outputs =  model(input_ids)
-    outputs = outputs.sum(axis =1).float()
+    outputs = outputs.sum(axis =1)
     logits  = decoder_model(outputs)
     loss = loss_fct(logits, labels.view(-1))
     return loss
@@ -160,10 +162,11 @@ def compute_grad(input_ids,labels ,model, decoder_model, create_graph= False):
         print("bert embedding grad norm :{}".format(torch.norm(model_params['embeddings.word_embeddings.weight'].grad)))
 
 def main():
+    torch.manual_seed(0)
     base_path = "models/"
     model, decoder_model = get_pre_trained(base_path)
-    input_ids = torch.randint(0, 30000, (40,113)).cuda()
-    labels = torch.randint(0,3,(40,)).cuda()
+    input_ids = torch.randint(0, 30000, (40,113)).cpu()
+    labels = torch.randint(0,3,(40,)).cpu()
 
     compute_grad(input_ids,labels, copy.deepcopy(model), copy.deepcopy(decoder_model), create_graph = True)
     compute_grad(input_ids,labels, copy.deepcopy(model), copy.deepcopy(decoder_model), create_graph = False)
